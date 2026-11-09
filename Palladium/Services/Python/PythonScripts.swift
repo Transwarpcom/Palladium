@@ -19,6 +19,10 @@ enum PythonScripts {
         "palladium_ytdlp/video_conversion.py",
         "palladium_ytdlp/webkit_jsi.py",
         "palladium_ytdlp/ytdlp.py",
+        // 国内平台补充提取器（抖音短链/图文、小红书短链/图文）。
+        // 放到临时目录的 yt_dlp_plugins/extractor/ 下，而该临时目录会被
+        // 插到 sys.path[0]，正好是 yt-dlp 插件机制扫描的位置。
+        "yt_dlp_plugins/extractor/cnsites.py",
     ]
 
     static let ytDlpScriptURL = stagePythonScripts().appendingPathComponent("yt_dlp_flow.py")
