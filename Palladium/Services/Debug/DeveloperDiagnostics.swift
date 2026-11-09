@@ -113,6 +113,13 @@ nonisolated enum DeveloperDiagnostics {
         DeveloperDiagnosticCheck(id: "quickjs.bridge", framework: .quickJS, title: "Python bridge") {
             await python("quickjs_bridge", argument: ["source": defaultJavaScriptSource])
         },
+        DeveloperDiagnosticCheck(
+            id: "plugins.report",
+            framework: .python,
+            title: "国内平台提取器（抖音/小红书/视频号）"
+        ) {
+            await python("ytdlp_plugins_report")
+        },
     ]
 
     static func checks(for framework: DeveloperFramework) -> [DeveloperDiagnosticCheck] {

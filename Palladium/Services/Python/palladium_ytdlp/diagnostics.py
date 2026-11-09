@@ -109,6 +109,59 @@ def ytdlp_impersonate_targets():
         return [f"unavailable: {type(error).__name__}: {error}"]
 
 
+def ytdlp_plugins_report(_argument):
+    """列出已注册的自建提取器，用来确认插件在 App 内是否真的生效。
+
+    排查「装了包却下不了国内平台」时先跑这个：
+    如果 expected 里的提取器没出现在 registered 里，
+    说明插件没加载（白名单没登记、文件没进 bundle、或 sys.path 顺序不对），
+    而不是平台反爬的问题。
+    """
+    try:
+        import sys
+
+        import yt_dlp
+
+        ydl = yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True})
+        ydl.add_default_info_extractors()
+        registered = sorted(ydl._ies.keys())
+
+        expected = [
+            "DouyinWebView", "DouyinNoteWebView", "DouyinShortLink",
+            "XiaoHongShuImages", "XiaoHongShuShort", "WeChatChannels",
+        ]
+        found = [name for name in expected if name in registered]
+        missing = [name for name in expected if name not in registered]
+
+        details = {
+            "script_dir_on_sys_path": next(
+                (p for p in sys.path[:5] if p and os.path.isdir(
+                    os.path.join(p, "yt_dlp_plugins"))), None),
+            "registered_total": len(registered),
+            "expected_found": found,
+            "expected_missing": missing,
+            "has_webkit_jsi": _module_available(
+                "yt_dlp_plugins.webkit_jsi.lib.easy"),
+        }
+        ok = not missing
+        text = json.dumps(details, indent=2, ensure_ascii=False)
+        if missing:
+            text += f"\n\n缺失: {', '.join(missing)}\n插件未加载，先查打包白名单和 sys.path。"
+        return diagnostic_result(ok, text, details)
+    except Exception as error:
+        return diagnostic_result(
+            False, f"{type(error).__name__}: {error}")
+
+
+def _module_available(name):
+    import importlib.util
+
+    try:
+        return importlib.util.find_spec(name) is not None
+    except Exception:
+        return False
+
+
 def curl_cffi_request(argument):
     from curl_cffi import requests
 
@@ -166,6 +219,8 @@ DIAGNOSTICS = {
     "curl_cffi_request": curl_cffi_request,
     "ffmpeg_bridge": ffmpeg_bridge,
     "quickjs_bridge": quickjs_bridge,
+    # 自建提取器自检：确认抖音/小红书/视频号插件在 App 内真的加载了
+    "ytdlp_plugins_report": ytdlp_plugins_report,
 }
 
 
