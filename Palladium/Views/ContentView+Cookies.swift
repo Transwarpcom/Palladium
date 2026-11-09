@@ -92,6 +92,65 @@ extension ContentView {
         resolvedCookieFilePath(named: selectedCookieFileName, clearsCurrentSelectionIfMissing: true)
     }
 
+    /// 下载前用 App 内登录会话把 cookie 文件刷新一遍，再返回路径。
+    ///
+    /// 这是解决「cookies 不自动刷新」的关键：cookie 文件的唯一真源是
+    /// `WKWebsiteDataStore.default()`，平台自己在那儿续期；
+    /// 每次下载前重新导出，文件就不会停在登录那一刻。
+    ///
+    /// 刷新失败（没登录过 / 平台还没下发新 cookie）时保留原文件，不阻断下载。
+    func refreshedSelectedCookieFilePath() async -> String? {
+        guard let path = resolvedSelectedCookieFilePath() else { return nil }
+        let fileURL = URL(fileURLWithPath: path)
+        let hosts = LiveCookieExporter.hosts(forCookieFileName: fileURL.lastPathComponent)
+        guard !hosts.isEmpty else { return path }
+
+        let refreshed = await LiveCookieExporter.refreshCookieFile(
+            at: fileURL, matching: hosts)
+        if refreshed {
+            appendConsoleText(
+                "[palladium] cookies refreshed from WebView session for \(hosts.joined(separator: ", "))\n",
+                source: .app
+            )
+        } else {
+            appendConsoleText(
+                "[palladium] cookie refresh found no matching session; using existing file\n",
+                source: .app
+            )
+        }
+        return path
+    }
+
+    /// 把所有从浏览器登录导出的 cookie 文件，用当前 WebKit 会话重写一遍。
+    ///
+    /// 触发时机：App 启动、WebView 登录完成。
+    /// 这样 `xxx-cookies.txt` 始终跟着平台自己的续期节奏走，
+    /// 不会停在「登录那一刻」——这是 cookies 不自动刷新的根治办法。
+    ///
+    /// 异步执行，不阻塞 UI；单个文件失败不影响其它文件。
+    func refreshAllLiveCookiesIfNeeded() {
+        let files = importedCookieFiles
+        guard !files.isEmpty else { return }
+        Task.detached(priority: .utility) {
+            var refreshed = 0
+            for file in files {
+                let hosts = LiveCookieExporter.hosts(forCookieFileName: file.fileName)
+                guard !hosts.isEmpty else { continue }
+                if await LiveCookieExporter.refreshCookieFile(
+                    at: file.fileURL, matching: hosts) {
+                    refreshed += 1
+                }
+            }
+            guard refreshed > 0 else { return }
+            await MainActor.run {
+                self.appendConsoleText(
+                    "[palladium] refreshed \(refreshed) cookie file(s) from WebView sessions\n",
+                    source: .app
+                )
+            }
+        }
+    }
+
     func resolvedCookieFilePath(
         named fileName: String,
         clearsCurrentSelectionIfMissing: Bool

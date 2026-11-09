@@ -22,6 +22,10 @@ struct CookieWebsiteImportView: View {
                     onCancel: { dismiss() },
                     onImport: { cookies in
                         try onImport(cookies, sourceURL)
+                        // 登录刚完成时先把会话落一次盘，后续下载读到的就是最新的。
+                        // 不这样做的话，cookie 文件会停在导入那一刻。
+                        NotificationCenter.default.post(
+                            name: .palladiumWebLoginCompleted, object: nil)
                         dismiss()
                     }
                 )
@@ -222,9 +226,22 @@ private struct CookieLoginWebView: UIViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
         webView.allowsBackForwardNavigationGestures = true
+
+        // 关键：必须伪装成手机版 Safari。
+        // 抖音/小红书/B站都会检测 UA，默认的 WKWebView UA 里带 App 标识，
+        // 它们会判定「在 App 内打开」，于是只显示「打开App」按钮、
+        // 完全不给登录框和验证码入口——这就是之前内置浏览器连登录功能都没有的原因。
+        webView.customUserAgent = Self.mobileSafariUserAgent
+
         webView.load(URLRequest(url: sourceURL))
         return webView
     }
+
+    /// iPhone Safari 的 UA。保留 Safari 标识，平台才当成正规浏览器给登录页。
+    static let mobileSafariUserAgent =
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) "
+        + "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 "
+        + "Mobile/15E148 Safari/604.1"
 
     func updateUIView(_ webView: WKWebView, context: Context) {}
 

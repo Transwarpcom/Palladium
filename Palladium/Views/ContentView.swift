@@ -726,10 +726,17 @@ struct ContentView: View {
                 requestNotificationAuthorizationIfNeeded()
             }
             refreshImportedCookieFiles()
+            // 启动时用 WebView 会话把 cookie 文件刷一遍，避免用上次登录的旧快照。
+            refreshAllLiveCookiesIfNeeded()
             consumePendingShortcutDownloadRequestIfNeeded()
             if checkPackageUpdatesOnLaunch {
                 runPackageFlow(action: .check, updateWhenAvailable: autoUpdatePackagesOnLaunch)
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .palladiumWebLoginCompleted)) { _ in
+            // 登录刚完成，立刻落一次盘
+            refreshImportedCookieFiles()
+            refreshAllLiveCookiesIfNeeded()
         }
         .onDisappear {
             clearIdleTimerOverride()

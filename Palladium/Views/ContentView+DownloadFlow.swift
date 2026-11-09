@@ -446,6 +446,9 @@ extension ContentView {
         } else {
             cookieFilePathAtStart = useCookiesAtStart ? resolvedSelectedCookieFilePath() : nil
         }
+        // cookie 文件在 App 启动和 WebView 登录完成时会被
+        // refreshAllLiveCookiesIfNeeded() 刷新（异步，不占用这里），
+        // 所以下载时直接读文件即可。
         var receivedPythonLiveOutput = false
         let liveLogDecoder = StreamingUTF8Decoder()
         let cancelMarker = makeCancelMarkerURL()
