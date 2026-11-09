@@ -65,12 +65,27 @@ enum LiveCookieExporter {
     ///
     /// 下载前调用一次，yt-dlp 读到的就是最新的会话。
     /// 返回是否写入成功（没登录/没有匹配 cookie 时返回 false，调用方应保留旧文件）。
+    ///
+    /// 覆盖保护：WebView 会话里的 cookie 条数比原文件少时**不覆盖**。
+    /// 用户从浏览器手动导出的文件可能含 WebView 里没有的字段
+    /// （比如某些设备指纹 cookie），盲目覆盖会把能用的配置刷坏。
     @discardableResult
     static func refreshCookieFile(
         at fileURL: URL,
         matching hosts: [String]
     ) async -> Bool {
         guard let text = await netscapeText(matching: hosts) else { return false }
+
+        // 数一下新导出的有效行数，和原文件比
+        let newCount = countCookieLines(in: text)
+        if let existing = try? String(contentsOf: fileURL, encoding: .utf8) {
+            let oldCount = countCookieLines(in: existing)
+            if newCount < oldCount {
+                return false
+            }
+        }
+        guard newCount > 0 else { return false }
+
         do {
             try FileManager.default.createDirectory(
                 at: fileURL.deletingLastPathComponent(),
@@ -80,6 +95,17 @@ enum LiveCookieExporter {
             return true
         } catch {
             return false
+        }
+    }
+
+    /// 数一下 Netscape cookie 文本里有多少条有效记录。
+    /// 跳过注释行（`#` 开头，但 `#HttpOnly_` 开头的算数据行）和空行。
+    static func countCookieLines(in text: String) -> Int {
+        text.split(separator: "\n", omittingEmptySubsequences: true).reduce(0) { count, rawLine in
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty { return count }
+            if line.hasPrefix("#"), !line.hasPrefix("#HttpOnly_") { return count }
+            return count + 1
         }
     }
 
