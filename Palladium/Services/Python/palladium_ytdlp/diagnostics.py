@@ -124,7 +124,15 @@ def ytdlp_plugins_report(_argument):
 
         ydl = yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True})
         ydl.add_default_info_extractors()
-        registered = sorted(ydl._ies.keys())
+        # _ies 是私有属性，不同 yt-dlp 版本结构可能不同
+        # （有的版本键是 IE_NAME，有的是类名），两种都收。
+        ies = getattr(ydl, "_ies", None) or {}
+        registered = set(ies.keys())
+        try:
+            registered |= {cls.__name__ for cls in ies.values()}
+        except Exception:
+            pass
+        registered = sorted(registered)
 
         expected = [
             "DouyinWebView", "DouyinNoteWebView", "DouyinShortLink",
@@ -185,7 +193,13 @@ def douyin_sign_probe(argument):
 
         ydl = yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True})
         ydl.add_default_info_extractors()
-        registered = "DouyinWebView" in ydl._ies
+        ies = getattr(ydl, "_ies", None) or {}
+        names = set(ies.keys())
+        try:
+            names |= {cls.__name__ for cls in ies.values()}
+        except Exception:
+            pass
+        registered = ("DouyinWebView" in names) or ("douyin:webview" in names)
     except Exception as error:
         registered = False
         step("extractor_registered", False, f"{type(error).__name__}: {error}")

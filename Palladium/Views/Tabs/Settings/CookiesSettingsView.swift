@@ -301,8 +301,13 @@ struct CookiesSettingsView: View {
     // MARK: - 常用平台快捷登录
 
     /// 一键跳转登录的站点。
-    /// 选这些的依据是实测：小红书必须登录才拿得到 xsec_token；
-    /// 抖音的 detail API 要 WebView 里的真实会话；B站登录后能上高码率 1080P。
+    ///
+    /// 每个站点的登录目的不同，别让用户以为「登录了就能下载所有平台」：
+    /// - 小红书：必须登录才拿得到 xsec_token，否则链接一律跳 404
+    /// - 抖音：detail API 要 WebView 里的真实会话，且 X-Bogus 签名靠页面 SDK
+    /// - 哔哩哔哩：登录后能上高码率 1080P（不登录也能下，只是码率低）
+    /// - 腾讯元宝：视频号唯一通路——元宝给它下发播放 token，没登录完全无解
+    /// - 微博 / 快手：目前 yt-dlp 支持有限，先留着入口
     static let quickLoginSites: [QuickLoginSite] = [
         QuickLoginSite(
             name: "小红书",
