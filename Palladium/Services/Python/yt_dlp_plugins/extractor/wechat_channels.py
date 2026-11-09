@@ -165,8 +165,21 @@ class WeChatChannelsIE(InfoExtractor):
                 f"视频号返回错误码 {feed_data.get('errCode')}: "
                 f"{feed_data.get('errMsg')}")
 
-        feed = traverse_obj(feed_data, ('data', 'feedInfo')) or {}
-        author = traverse_obj(feed_data, ('data', 'authorInfo', 'nickname', {str})) or ''
+        # feedInfo 可能在 data.feedInfo，也可能直接在顶层（接口版本差异），
+        # 依次尝试，避免结构一变就全盘失败。
+        feed = (
+            traverse_obj(feed_data, ('data', 'feedInfo'))
+            or traverse_obj(feed_data, ('feedInfo',))
+            or traverse_obj(feed_data, ('data',))
+            or {}
+        )
+        if not isinstance(feed, dict):
+            feed = {}
+        author = (
+            traverse_obj(feed_data, ('data', 'authorInfo', 'nickname', {str}))
+            or traverse_obj(feed_data, ('authorInfo', 'nickname', {str}))
+            or ''
+        )
         desc = traverse_obj(feed, ('description', {str})) or ''
 
         # 视频：h264 优先（兼容性最好），其次主地址，最后 h265

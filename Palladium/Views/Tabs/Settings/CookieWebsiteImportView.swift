@@ -31,10 +31,13 @@ struct CookieWebsiteImportView: View {
                 )
             }
             .toolbar {
-                // fullScreenCover 没有下拉关闭手势，必须给明确的关闭入口，
-                // 否则用户进去就出不来。
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("common.cancel") { dismiss() }
+                // 预设网址时（从「常用平台登录」进来）直接进浏览器页面，
+                // 那一层没有取消按钮，这里补一个；否则用户会被困在 WebView 里。
+                // 非预设时 CookieWebsiteURLView 自己带取消，不重复加。
+                if presetURL != nil {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("common.cancel") { dismiss() }
+                    }
                 }
             }
         }

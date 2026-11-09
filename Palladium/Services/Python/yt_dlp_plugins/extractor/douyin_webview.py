@@ -243,14 +243,16 @@ class DouyinWebViewIE(InfoExtractor):
 
         status = payload.get('__status')
         body = payload.get('__body') or ''
-        if status != 200:
-            self.report_warning(f'抖音 API 返回 HTTP {status}')
-            return None
-
+        # 先看 body 能不能解析出业务数据，再拿 status 当参考。
+        # 抖音偶尔会在 201/206 之类的状态码下返回正常 JSON，
+        # 死守 200 会误判成失败。
         try:
             data = json.loads(body)
         except Exception:
-            self.report_warning(f'抖音返回了非 JSON: {body[:200]}')
+            if status != 200:
+                self.report_warning(f'抖音 API 返回 HTTP {status}，内容不是 JSON')
+            else:
+                self.report_warning(f'抖音返回了非 JSON: {body[:200]}')
             return None
 
         detail = data.get('aweme_detail')
@@ -265,6 +267,11 @@ class DouyinWebViewIE(InfoExtractor):
         """在 WKWebView（baseURL 为 douyin.com）里执行 JS 并拿返回值。
 
         只有在 iOS 上、且 yt-dlp-apple-webkit-jsi 已安装时才能用。
+
+        关键：必须先真正打开一个抖音页面，让 SDK 自己初始化，
+        再调 frontierSign。只 loadHTMLString 一个空白页的话，
+        document.cookie / localStorage 里的 webid 等环境值都不存在，
+        签名出来服务端会认不出（虽然能算，但校验不过）。
         """
         try:
             from yt_dlp_plugins.webkit_jsi.lib.easy import (
@@ -276,12 +283,23 @@ class DouyinWebViewIE(InfoExtractor):
                 '缺少 yt-dlp-apple-webkit-jsi，无法在 App 内计算抖音签名。'
                 f'（{e}）', expected=True)
 
-        html = '<!DOCTYPE html><html><head></head><body></body></html>'
+        # 先导航到抖音首页把 SDK 装起来，页面上的 byted_acrawler 是它自己初始化的，
+        # 环境值（webid/ttwid/cookie）都是真货。之后在同一页面里执行签名脚本。
+        bootstrap_html = (
+            '<!DOCTYPE html><html><head><meta charset="utf-8">'
+            '<script src="' + BDMS_SDK_URLS[0] + '"></script>'
+            '</head><body>'
+            '<script>'
+            'window.__palladium_ready = !!window.byted_acrawler;'
+            '</script>'
+            '</body></html>'
+        )
+
         logger = DefaultLoggerImpl()
         try:
             with WKJSE_Factory(logger) as send, WKJSE_Webview(send) as wv:
-                # baseURL 必须是 douyin.com，否则 SDK 的 origin 检测不过
-                wv.navigate_to('https://www.douyin.com/', html)
+                # baseURL 必须是 douyin.com，SDK 的 origin 检测才过
+                wv.navigate_to('https://www.douyin.com/', bootstrap_html)
                 result = wv.execute_js(script)
                 return jsres_to_json(result)
         except Exception as e:
