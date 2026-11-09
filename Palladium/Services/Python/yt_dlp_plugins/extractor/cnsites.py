@@ -96,9 +96,26 @@ class XiaoHongShuShortIE(InfoExtractor):
                 f'短链展开后没找到笔记 ID（跳转到 {final_url}）', expected=True)
 
         note_id = m.group(1)
-        return self.url_result(
-            f'https://www.xiaohongshu.com/explore/{note_id}',
-            ie='XiaoHongShu', video_id=note_id)
+
+        # 关键：把展开后 URL 里的 xsec_token 原样带过去。
+        # 不带的话服务端会重定向到 /404，之前短链解析一直失败就是这个原因。
+        query = urllib.parse.parse_qs(urllib.parse.urlparse(final_url).query)
+        xsec_token = (query.get('xsec_token') or [''])[0]
+        xsec_source = (query.get('xsec_source') or ['pc_feed'])[0]
+
+        target = f'https://www.xiaohongshu.com/explore/{note_id}'
+        if xsec_token:
+            target += (f'?xsec_token={urllib.parse.quote(xsec_token, safe="")}'
+                       f'&xsec_source={urllib.parse.quote(xsec_source, safe="")}')
+            self.write_debug(f'携带 xsec_token: {xsec_token[:16]}…')
+        else:
+            self.write_debug('展开后的 URL 里没有 xsec_token')
+
+        # 交给自己的图片提取器，不是原生的 XiaoHongShu。
+        # 原生只认 note.video.media.stream，图文笔记没有 video 字段，
+        # 会直接抛 "No video formats found"。而 XiaoHongShuImagesIE
+        # 内部会判断：有视频就转回原生，没视频才走 imageList。
+        return self.url_result(target, ie='XiaoHongShuImages', video_id=note_id)
 
 
 class XiaoHongShuImagesIE(InfoExtractor):
@@ -134,6 +151,17 @@ class XiaoHongShuImagesIE(InfoExtractor):
             if m:
                 xsec_token = m.group(1)
                 self.write_debug(f'拿到 xsec_token: {xsec_token[:16]}…')
+            else:
+                # 2026-11 实测：登录后 explore 首页只有 40KB 的 SPA 外壳，
+                # 数据走 XHR（需要 x-s 签名），页面里根本没有 xsec_token。
+                # 与其下去撞 404 让人困惑，不如直接说清怎么拿对的链接。
+                raise ExtractorError(
+                    '小红书链接缺 xsec_token，打开后会被重定向到 404。'
+                    '正确做法：在小红书 App 里点「分享 → 复制链接」，'
+                    '得到的是 xhslink.com 短链（本插件会自动展开并带上 token），'
+                    '或者带 xsec_token 参数的完整链接。'
+                    '直接复制浏览器地址栏的 explore/<id> 通常不带 token。',
+                    expected=True)
         if xsec_token:
             fetch_url = (f'https://www.xiaohongshu.com/explore/{note_id}'
                          f'?xsec_token={xsec_token}&xsec_source={xsec_source}')
