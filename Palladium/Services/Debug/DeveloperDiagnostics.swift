@@ -120,6 +120,13 @@ nonisolated enum DeveloperDiagnostics {
         ) {
             await python("ytdlp_plugins_report")
         },
+        DeveloperDiagnosticCheck(
+            id: "douyin.probe",
+            framework: .python,
+            title: "抖音签名全流程（WebView frontierSign）"
+        ) {
+            await python("douyin_sign_probe")
+        },
     ]
 
     static func checks(for framework: DeveloperFramework) -> [DeveloperDiagnosticCheck] {

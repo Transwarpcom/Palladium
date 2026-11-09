@@ -153,6 +153,80 @@ def ytdlp_plugins_report(_argument):
             False, f"{type(error).__name__}: {error}")
 
 
+def douyin_sign_probe(argument):
+    """在真机上跑一遍抖音 WebView 签名全流程，逐步报告卡在哪。
+
+    这是唯一没法在电脑上验证的环节：桌面 Chrome 里 frontierSign 能跑通，
+    但 iOS 的 WKWebView 环境自检可能不一样。装包后先跑这个：
+
+    - webview_ok=false         → webkit_jsi 不可用（依赖没装进包）
+    - sdk_not_loaded           → 拿不到 bdms SDK（网络/域名问题）
+    - sign_failed              → SDK 装上了但 frontierSign 抛异常
+    - http != 200 且无业务数据  → 签名算出来但服务端不认（环境值缺失）
+    - aweme_detail 为空         → 签名通了，是作品本身的问题（已删/权限）
+    - 全部通过                  → 拿到 playable_url 才说明真跑通了
+    """
+    video_id = str((argument or {}).get("video_id") or "6961737553342991651")
+    probe = {"video_id": video_id, "steps": []}
+
+    def step(name, ok, detail=""):
+        probe["steps"].append({"step": name, "ok": bool(ok), "detail": str(detail)[:400]})
+        return ok
+
+    # 1) 依赖是否可用
+    if not _module_available("yt_dlp_plugins.webkit_jsi.lib.easy"):
+        step("import_webkit_jsi", False, "模块不存在")
+        return diagnostic_result(False, json.dumps(probe, indent=2, ensure_ascii=False), probe)
+    step("import_webkit_jsi", True)
+
+    # 2) 提取器是否注册
+    try:
+        import yt_dlp
+
+        ydl = yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True})
+        ydl.add_default_info_extractors()
+        registered = "DouyinWebView" in ydl._ies
+    except Exception as error:
+        registered = False
+        step("extractor_registered", False, f"{type(error).__name__}: {error}")
+    else:
+        step("extractor_registered", registered, "DouyinWebView 在册" if registered else "未注册")
+    if not registered:
+        return diagnostic_result(False, json.dumps(probe, indent=2, ensure_ascii=False), probe)
+
+    # 3) 真正跑一次签名 + 请求
+    try:
+        from yt_dlp_plugins.extractor.douyin_webview import DouyinWebViewIE
+    except Exception as error:
+        step("import_extractor", False, f"{type(error).__name__}: {error}")
+        return diagnostic_result(False, json.dumps(probe, indent=2, ensure_ascii=False), probe)
+    step("import_extractor", True)
+
+    try:
+        ie = DouyinWebViewIE()
+        ie.set_downloader(ydl)
+        detail = ie._fetch_detail(video_id)
+    except Exception as error:
+        step("sign_and_fetch", False, f"{type(error).__name__}: {error}")
+        return diagnostic_result(False, json.dumps(probe, indent=2, ensure_ascii=False), probe)
+
+    if not detail:
+        step("sign_and_fetch", False, "没拿到 aweme_detail（看上面的 report_warning）")
+        return diagnostic_result(False, json.dumps(probe, indent=2, ensure_ascii=False), probe)
+
+    step("sign_and_fetch", True)
+    play = ((detail.get("video") or {}).get("play_addr") or {}).get("url_list") or []
+    probe["result"] = {
+        "desc": str(detail.get("desc"))[:60],
+        "author": str((detail.get("author") or {}).get("nickname"))[:30],
+        "play_url_count": len(play),
+        "first_play_url": (play[0][:120] if play else None),
+    }
+    ok = bool(play)
+    step("have_play_url", ok, f"{len(play)} 个地址" if ok else "没有播放地址")
+    return diagnostic_result(ok, json.dumps(probe, indent=2, ensure_ascii=False), probe)
+
+
 def _module_available(name):
     import importlib.util
 
@@ -221,6 +295,8 @@ DIAGNOSTICS = {
     "quickjs_bridge": quickjs_bridge,
     # 自建提取器自检：确认抖音/小红书/视频号插件在 App 内真的加载了
     "ytdlp_plugins_report": ytdlp_plugins_report,
+    # 抖音签名全流程实测：这一步只能在真机上验
+    "douyin_sign_probe": douyin_sign_probe,
 }
 
 
