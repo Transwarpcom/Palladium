@@ -22,6 +22,8 @@ enum PythonScripts {
         // 国内平台补充提取器（抖音短链/图文、小红书短链/图文）。
         // 放到临时目录的 yt_dlp_plugins/extractor/ 下，而该临时目录会被
         // 插到 sys.path[0]，正好是 yt-dlp 插件机制扫描的位置。
+        "yt_dlp_plugins/__init__.py",
+        "yt_dlp_plugins/extractor/__init__.py",
         "yt_dlp_plugins/extractor/cnsites.py",
         // 抖音 WebView 签名提取器：用 App 内 WKWebView 跑官方 bdms SDK
         // 算 X-Bogus。纯 Python 的 a_bogus 实现（f2 / ylcangel /
