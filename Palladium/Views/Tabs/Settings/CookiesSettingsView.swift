@@ -169,7 +169,12 @@ struct CookiesSettingsView: View {
         .sheet(isPresented: $showWebsiteImporter) {
             CookieWebsiteImportView(onImport: onImportFromWebsite)
         }
-        .sheet(item: $quickLoginSite) { site in
+        // 常用平台登录用 fullScreenCover 而不是 sheet。
+        // 原因：这一层已经挂了三个 .sheet，SwiftUI 只认最后一个，
+        // 前面几个会静默失效——「点了没反应」就是这么来的。
+        // fullScreenCover 是另一类 presenter，不与 sheet 抢，
+        // 而且登录要输账号密码，全屏本来就更合适。
+        .fullScreenCover(item: $quickLoginSite) { site in
             CookieWebsiteImportView(
                 onImport: onImportFromWebsite,
                 presetURL: site.url

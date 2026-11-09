@@ -30,6 +30,13 @@ struct CookieWebsiteImportView: View {
                     }
                 )
             }
+            .toolbar {
+                // fullScreenCover 没有下拉关闭手势，必须给明确的关闭入口，
+                // 否则用户进去就出不来。
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("common.cancel") { dismiss() }
+                }
+            }
         }
         .interactiveDismissDisabled()
         .onAppear {
