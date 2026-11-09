@@ -101,6 +101,7 @@ class DouyinNoteIE(InfoExtractor):
 
         return {
             'id': note_id,
+            '_type': 'playlist',
             'title': desc.strip()[:200] or note_id,
             'description': desc,
             'uploader': author,
@@ -108,8 +109,11 @@ class DouyinNoteIE(InfoExtractor):
             'entries': [{
                 'id': f'{note_id}_{i}',
                 'title': f'{desc[:60]}_{i + 1}',
-                'url': u,
-                'ext': 'jpg',
+                'formats': [{
+                    'url': u,
+                    'ext': 'jpg',
+                    'format_id': 'image',
+                }],
                 'http_headers': {'Referer': 'https://www.douyin.com/'},
             } for i, u in enumerate(cleaned)],
         }
@@ -200,8 +204,19 @@ class XiaoHongShuImagesIE(InfoExtractor):
         if traverse_obj(note, ('video', 'media', 'stream')):
             return self.url_result(url, ie='XiaoHongShu', video_id=note_id)
 
-        images = [u for u in (traverse_obj(note, ('imageList', ..., 'urlDefault')) or [])
-                  if url_or_none(u)]
+        # 优先取原图，其次默认图。imageList 里不同笔记字段不同，
+        # 按质量从高到低依次尝试。
+        raw_images = traverse_obj(note, ('imageList', ...)) or []
+        images = []
+        for item in raw_images:
+            if not isinstance(item, dict):
+                continue
+            for key in ('urlDefault', 'urlPre', 'url'):
+                v = item.get(key)
+                if url_or_none(v):
+                    # http -> https，CDN 都支持
+                    images.append(v.replace('http://', 'https://', 1))
+                    break
         if not images:
             raise ExtractorError('这条笔记没有图片也没有视频', expected=True)
 
@@ -211,6 +226,7 @@ class XiaoHongShuImagesIE(InfoExtractor):
 
         return {
             'id': note_id,
+            '_type': 'playlist',
             'title': title.strip()[:200],
             'description': desc,
             'uploader': uploader,
@@ -218,8 +234,11 @@ class XiaoHongShuImagesIE(InfoExtractor):
             'entries': [{
                 'id': f'{note_id}_{i}',
                 'title': f'{title[:60]}_{i + 1}',
-                'url': u,
-                'ext': 'jpg',
+                'formats': [{
+                    'url': u,
+                    'ext': 'jpg',
+                    'format_id': 'image',
+                }],
                 'http_headers': {'Referer': 'https://www.xiaohongshu.com/'},
             } for i, u in enumerate(images)],
         }
