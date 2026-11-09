@@ -103,7 +103,13 @@ if (!token) {
 out.token = token;
 out.eid = eid;
 if (!token) {
-  return JSON.stringify({ __error: 'no_token', parsed: parsed });
+  // 把原始响应一起带回去，方便判断是「未登录」「接口改了」还是「作品无权限」
+  return JSON.stringify({
+    __error: 'no_token',
+    __parseStatus: out.parseStatus,
+    __playable: String(playable).slice(0, 300),
+    parsed: parsed,
+  });
 }
 
 // ---------- 3. 拿 feedInfo ----------
@@ -302,6 +308,17 @@ class WeChatChannelsIE(InfoExtractor):
             raise ExtractorError(
                 '还没登录腾讯元宝。请到「设置 → Cookies → 常用平台登录」'
                 '选「腾讯元宝」扫码登录一次（之后会一直有效）。', expected=True)
+        if err == 'no_token':
+            # 带上详情：没有 playable_url 通常是登录态过期或作品无权限
+            status = payload.get('__parseStatus')
+            playable = payload.get('__playable') or ''
+            parsed = str(payload.get('parsed', ''))[:300]
+            raise ExtractorError(
+                f'元宝没给回 token（HTTP {status}）。'
+                '可能性：元宝登录已过期（重新扫码）、这条作品需要权限、'
+                '或元宝接口改版。'
+                f'原始响应：playable_url={playable or "空"}，{parsed}',
+                expected=True)
         if err:
             raise ExtractorError(
                 f"视频号解析失败：{err} {payload.get('detail', '')} "
