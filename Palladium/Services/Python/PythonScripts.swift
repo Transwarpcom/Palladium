@@ -27,6 +27,10 @@ enum PythonScripts {
         // 算 X-Bogus。纯 Python 的 a_bogus 实现（f2 / ylcangel /
         // JoeanAmier）2026-11 实测全部失效，只有这条路能拿到播放地址。
         "yt_dlp_plugins/extractor/douyin_webview.py",
+        // 微信视频号：App 内 WebView 登录元宝换 token 再拿 mp4 直链。
+        // 匿名访问只能拿到作者/封面，videoUrl 恒为空（2026-11 实测），
+        // 视频流的鉴权 token 只能由元宝代解析接口下发。
+        "yt_dlp_plugins/extractor/wechat_channels.py",
     ]
 
     static let ytDlpScriptURL = stagePythonScripts().appendingPathComponent("yt_dlp_flow.py")

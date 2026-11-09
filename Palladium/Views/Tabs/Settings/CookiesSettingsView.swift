@@ -320,6 +320,10 @@ struct CookiesSettingsView: View {
             url: URL(string: "https://www.kuaishou.com/")!,
             icon: "video"),
         QuickLoginSite(
+            name: "腾讯元宝（视频号）",
+            url: URL(string: "https://yuanbao.tencent.com/")!,
+            icon: "sparkles"),
+        QuickLoginSite(
             name: "YouTube",
             url: URL(string: "https://www.youtube.com/")!,
             icon: "play.square.stack"),
