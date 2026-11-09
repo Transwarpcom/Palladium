@@ -26,11 +26,11 @@ from yt_dlp.extractor.common import InfoExtractor
 from yt_dlp.utils import ExtractorError, traverse_obj, url_or_none
 
 
-# 抖音线上实际使用的 SDK（2026-11 抓自 www.douyin.com）
-# 版本随抖音更新会变，这里按顺序尝试，谁先成功用谁
+# 抖音线上实际使用的 SDK（2026-11 从 www.douyin.com 页面抓到的真实地址）
+# 版本随抖音更新会变，这里按顺序尝试，谁先成功用谁。
+# 注意域名是 p-pc-weboff（一个 p，两个 c 会解析失败）。
 BDMS_SDK_URLS = [
-    'https://p-ppc-weboff.byteimg.com/tos-cn-i-9r5gewecjs/bdms_1.0.1.19_fix.js',
-    'https://lf-c-flwb.bytetos.com/obj/rc-client-security/webmssdk/1.0.0.20/webmssdk.es5.js',
+    'https://p-pc-weboff.byteimg.com/tos-cn-i-9r5gewecjs/bdms_1.0.1.19_fix.js',
 ]
 
 # 抖音网页版请求的固定参数。这些值必须和 SDK 自检的环境一致，
