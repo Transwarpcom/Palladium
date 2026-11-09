@@ -195,11 +195,34 @@ private struct CookieLoginBrowserView: View {
     private func importCookies() {
         isImporting = true
         browser.getAllCookies { cookies in
-            isImporting = false
-            do {
-                try onImport(cookies)
-            } catch {
-                errorMessage = error.localizedDescription
+            // getAllCookies 的回调在任意线程，@Published 必须在主线程改
+            DispatchQueue.main.async {
+                isImporting = false
+                // 只保留当前站点（含子域）的 cookie。
+                // getAllCookies 返回的是整个 App 的 WebKit 存储，
+                // 不过滤的话会把抖音/B站/元宝的会话全写进一个文件，
+                // 既泄隐私又让 yt-dlp 收到无关 cookie。
+                let host = sourceURL.host?.lowercased() ?? ""
+                let scoped: [HTTPCookie]
+                if host.isEmpty {
+                    scoped = cookies
+                } else {
+                    scoped = cookies.filter { cookie in
+                        let domain = cookie.domain.lowercased()
+                            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+                        return domain == host || domain.hasSuffix("." + host)
+                            || host.hasSuffix("." + domain)
+                    }
+                }
+                guard !scoped.isEmpty else {
+                    errorMessage = String(localized: "cookies.error.web_no_cookies", bundle: .app)
+                    return
+                }
+                do {
+                    try onImport(scoped)
+                } catch {
+                    errorMessage = error.localizedDescription
+                }
             }
         }
     }
