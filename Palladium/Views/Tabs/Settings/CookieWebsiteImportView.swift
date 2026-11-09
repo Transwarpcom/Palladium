@@ -4,6 +4,9 @@ import WebKit
 
 struct CookieWebsiteImportView: View {
     let onImport: (_ cookies: [HTTPCookie], _ sourceURL: URL) throws -> Void
+    /// 预设网址：给了就跳过输入框，直接进登录浏览器。
+    /// 用于「小红书 / 抖音 / B站」这类固定站点的快捷入口。
+    var presetURL: URL? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var navigationPath: [URL] = []
@@ -25,6 +28,11 @@ struct CookieWebsiteImportView: View {
             }
         }
         .interactiveDismissDisabled()
+        .onAppear {
+            if let presetURL, navigationPath.isEmpty {
+                navigationPath.append(presetURL)
+            }
+        }
     }
 }
 
@@ -184,7 +192,11 @@ private struct CookieLoginBrowserView: View {
 }
 
 private final class CookieLoginBrowserModel: ObservableObject {
-    let websiteDataStore = WKWebsiteDataStore.nonPersistent()
+    // 用 default() 而不是 nonPersistent()：
+    // 后者每次登录都是一次性会话，关掉就没了，等于每回都要重新登录。
+    // default() 把 cookie 和 localStorage 落到 App 的 WebKit 数据目录，
+    // 下次打开还在，会话能自己续期（这正是解决 cookies 过期问题的关键）。
+    let websiteDataStore = WKWebsiteDataStore.default()
 
     @Published var isLoading = false
     @Published var loadErrorMessage: String?

@@ -49,11 +49,17 @@ class DouyinShortLinkIE(InfoExtractor):
 
         return self.url_result(
             f'https://www.douyin.com/video/{real_id}',
-            ie='Douyin', video_id=real_id)
+            ie='DouyinWebView', video_id=real_id)
 
 
 class DouyinNoteIE(InfoExtractor):
-    """抖音图文作品（/note/<id>）：原生 DouyinIE 不认这个路径。"""
+    """抖音图文作品（/note/<id>）：原生 DouyinIE 不认这个路径。
+
+    2026-11 实测：iesdouyin 分享页已经不再注入 _ROUTER_DATA 里的
+    item_list（play_addr 出现 0 次），所以这里不再自己解析，
+    直接转给 DouyinWebViewIE —— 它用 App 内 WKWebView 跑官方 SDK
+    签名，能拿到正常的 aweme_detail（图文作品的 images 字段在里面）。
+    """
 
     IE_NAME = 'douyin:note'
     IE_DESC = '抖音图文作品'
@@ -62,61 +68,9 @@ class DouyinNoteIE(InfoExtractor):
 
     def _real_extract(self, url):
         note_id = self._match_id(url)
-        webpage = self._download_webpage(
-            f'https://www.iesdouyin.com/share/slides/{note_id}/',
-            note_id, '下载图文分享页', fatal=False) or ''
-
-        router = self._search_json(
-            r'(?:window\.)?_ROUTER_DATA\s*=', webpage, 'router data', note_id,
-            transform_source=js_to_json, fatal=False)
-
-        item = None
-        if isinstance(router, dict):
-            for value in (router.get('loaderData') or {}).values():
-                if not isinstance(value, dict):
-                    continue
-                for key in ('videoInfoRes', 'video_info_res'):
-                    res = value.get(key)
-                    if isinstance(res, dict):
-                        items = res.get('item_list') or res.get('itemList') or []
-                        if items:
-                            item = items[0]
-                            break
-                if item:
-                    break
-
-        if not item:
-            raise ExtractorError(
-                '图文页面没解析出内容（可能需要 cookies，或页面结构已变）',
-                expected=True)
-
-        images = [u for u in (traverse_obj(item, ('images', ..., 'url_list', 0)) or [])
-                  if url_or_none(u)]
-        cleaned = [re.sub(r'[?&](?:watermark|wm)=\d+', '', u) for u in images]
-        if not cleaned:
-            raise ExtractorError('这个图文作品没有可用图片', expected=True)
-
-        desc = traverse_obj(item, ('desc', {str})) or f'douyin_{note_id}'
-        author = traverse_obj(item, ('author', 'nickname', {str})) or ''
-
-        return {
-            'id': note_id,
-            '_type': 'playlist',
-            'title': desc.strip()[:200] or note_id,
-            'description': desc,
-            'uploader': author,
-            'thumbnails': [{'url': u} for u in cleaned],
-            'entries': [{
-                'id': f'{note_id}_{i}',
-                'title': f'{desc[:60]}_{i + 1}',
-                'formats': [{
-                    'url': u,
-                    'ext': 'jpg',
-                    'format_id': 'image',
-                }],
-                'http_headers': {'Referer': 'https://www.douyin.com/'},
-            } for i, u in enumerate(cleaned)],
-        }
+        return self.url_result(
+            f'https://www.douyin.com/video/{note_id}',
+            ie='DouyinNoteWebView', video_id=note_id)
 
 
 # ---------------------------------------------------------------- 小红书

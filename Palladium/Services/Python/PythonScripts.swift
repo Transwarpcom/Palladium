@@ -23,6 +23,10 @@ enum PythonScripts {
         // 放到临时目录的 yt_dlp_plugins/extractor/ 下，而该临时目录会被
         // 插到 sys.path[0]，正好是 yt-dlp 插件机制扫描的位置。
         "yt_dlp_plugins/extractor/cnsites.py",
+        // 抖音 WebView 签名提取器：用 App 内 WKWebView 跑官方 bdms SDK
+        // 算 X-Bogus。纯 Python 的 a_bogus 实现（f2 / ylcangel /
+        // JoeanAmier）2026-11 实测全部失效，只有这条路能拿到播放地址。
+        "yt_dlp_plugins/extractor/douyin_webview.py",
     ]
 
     static let ytDlpScriptURL = stagePythonScripts().appendingPathComponent("yt_dlp_flow.py")

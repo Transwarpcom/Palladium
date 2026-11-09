@@ -16,6 +16,7 @@ struct CookiesSettingsView: View {
 
     @State private var showFileImporter = false
     @State private var showWebsiteImporter = false
+    @State private var quickLoginSite: QuickLoginSite?
     @State private var showPasteCookiesSheet = false
     @State private var pastedCookiesText = ""
     @State private var pastedCookiesName = "pasted-cookies"
@@ -40,6 +41,22 @@ struct CookiesSettingsView: View {
                     showWebsiteImporter = true
                 } label: {
                     Label("cookies.web.button", systemImage: "globe")
+                }
+                .disabled(isBusy)
+
+                // 常用平台一键登录：省去手输网址。
+                // 这里必须用 App 内 WebView 登录——它持有持久会话，
+                // token 会自己续期；导入 cookies 文件只是快照，很快就过期。
+                Menu {
+                    ForEach(CookiesSettingsView.quickLoginSites, id: \.url) { site in
+                        Button {
+                            quickLoginSite = site
+                        } label: {
+                            Label(site.name, systemImage: site.icon)
+                        }
+                    }
+                } label: {
+                    Label("常用平台登录", systemImage: "bolt.badge.clock")
                 }
                 .disabled(isBusy)
 
@@ -151,6 +168,12 @@ struct CookiesSettingsView: View {
         }
         .sheet(isPresented: $showWebsiteImporter) {
             CookieWebsiteImportView(onImport: onImportFromWebsite)
+        }
+        .sheet(item: $quickLoginSite) { site in
+            CookieWebsiteImportView(
+                onImport: onImportFromWebsite,
+                presetURL: site.url
+            )
         }
         .sheet(isPresented: $showPasteCookiesSheet) {
             NavigationStack {
@@ -269,4 +292,45 @@ struct CookiesSettingsView: View {
         renamedCookieName = cookieFile.displayName
         cookieFileToRename = cookieFile
     }
+
+    // MARK: - 常用平台快捷登录
+
+    /// 一键跳转登录的站点。
+    /// 选这些的依据是实测：小红书必须登录才拿得到 xsec_token；
+    /// 抖音的 detail API 要 WebView 里的真实会话；B站登录后能上高码率 1080P。
+    static let quickLoginSites: [QuickLoginSite] = [
+        QuickLoginSite(
+            name: "小红书",
+            url: URL(string: "https://www.xiaohongshu.com/explore")!,
+            icon: "book.closed"),
+        QuickLoginSite(
+            name: "抖音",
+            url: URL(string: "https://www.douyin.com/")!,
+            icon: "music.note.tv"),
+        QuickLoginSite(
+            name: "哔哩哔哩",
+            url: URL(string: "https://www.bilibili.com/")!,
+            icon: "play.rectangle"),
+        QuickLoginSite(
+            name: "微博",
+            url: URL(string: "https://weibo.com/")!,
+            icon: "bubble.left.and.bubble.right"),
+        QuickLoginSite(
+            name: "快手",
+            url: URL(string: "https://www.kuaishou.com/")!,
+            icon: "video"),
+        QuickLoginSite(
+            name: "YouTube",
+            url: URL(string: "https://www.youtube.com/")!,
+            icon: "play.square.stack"),
+    ]
+}
+
+/// 常用平台快捷登录项。`Identifiable` 让 `.sheet(item:)` 能直接用。
+struct QuickLoginSite: Identifiable, Hashable {
+    let name: String
+    let url: URL
+    let icon: String
+
+    var id: URL { url }
 }
