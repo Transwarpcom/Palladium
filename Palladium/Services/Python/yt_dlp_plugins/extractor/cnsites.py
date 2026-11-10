@@ -75,6 +75,37 @@ class DouyinNoteIE(InfoExtractor):
 
 # ---------------------------------------------------------------- 小红书
 
+
+def _strip_xhs_resize(url):
+    """去掉小红书 CDN 的缩放/裁剪参数，拿原图。
+
+    sns-img.xhscdn.com 的图片地址后面常带处理后缀，形如：
+      ...jpg?imageView2/2/w/1080/format/webp
+      ...jpg!nd_dft_wlteh_webp_3
+    这些会让服务端返回压缩版。去掉后拿到原始尺寸。
+
+    只做保守处理：删掉 query 里的 imageView2 参数段、删掉 ! 开头的
+    处理后缀。不确定的形态原样返回，宁可拿压缩图也不要 404。
+    """
+    if not url:
+        return url
+    out = url.replace('http://', 'https://', 1)
+
+    # 去掉 ! 后面的处理后缀（小红书常见的写法）
+    bang = out.find('!')
+    if bang > 0:
+        out = out[:bang]
+
+    # 去掉 imageView2 这类查询参数
+    if '?' in out:
+        base, _, query = out.partition('?')
+        kept = [p for p in query.split('&')
+                if p and not p.startswith(('imageView2', 'imageMogr2'))]
+        out = base + ('?' + '&'.join(kept) if kept else '')
+
+    return out
+
+
 class XiaoHongShuShortIE(InfoExtractor):
     """xhslink.com / xhslink.cn 短链（小红书 App 分享的默认形式）。"""
 
@@ -196,8 +227,7 @@ class XiaoHongShuImagesIE(InfoExtractor):
             for key in ('urlDefault', 'urlPre', 'url'):
                 v = item.get(key)
                 if url_or_none(v):
-                    # http -> https，CDN 都支持
-                    images.append(v.replace('http://', 'https://', 1))
+                    images.append(_strip_xhs_resize(v))
                     break
         if not images:
             raise ExtractorError('这条笔记没有图片也没有视频', expected=True)
