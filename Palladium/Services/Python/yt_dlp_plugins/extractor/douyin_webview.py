@@ -73,6 +73,21 @@ def _build_query(extra):
     return '&'.join(parts)
 
 
+def _https(url):
+    """把 http 换成 https。
+
+    App 的 Info.plist 没有 ATS 例外，所有网络请求强制 HTTPS。
+    抖音的 CDN 地址偶尔下发 http://，直接用会被系统拦掉，
+    报错信息还很难懂（NSURLErrorAppTransportSecurityRequiresSecureConnection）。
+    抖音的 CDN（douyinvod.com / douyinpic.com）都支持 https，换掉无副作用。
+    """
+    if not url or not isinstance(url, str):
+        return url
+    if url.startswith('http://'):
+        return 'https://' + url[len('http://'):]
+    return url
+
+
 # 页面内执行的 JS：加载 SDK → 签名 → fetch → 返回 JSON
 _PAGE_SCRIPT_TEMPLATE = r'''
 const __sdkUrls = __SDK_URLS__;
@@ -172,7 +187,7 @@ class DouyinWebViewIE(InfoExtractor):
             if m:
                 height = int(m.group(1))
             formats.append({
-                'url': play_urls[0],
+                'url': _https(play_urls[0]),
                 'format_id': gear,
                 'ext': 'mp4',
                 'height': height,
@@ -188,14 +203,16 @@ class DouyinWebViewIE(InfoExtractor):
             play_urls = traverse_obj(detail, ('video', 'play_addr', 'url_list', ...)) or []
             for i, u in enumerate(u for u in play_urls if url_or_none(u)):
                 formats.append({
-                    'url': u,
+                    'url': _https(u),
                     'format_id': f'play_{i}',
                     'ext': 'mp4',
                     'http_headers': {'Referer': 'https://www.douyin.com/'},
                 })
 
         # 图文作品：images 字段有图（抖音的图文没有 play_addr）
-        images = traverse_obj(detail, ('images', ..., 'url_list', 0)) or []
+        images = [_https(u) for u in (
+            traverse_obj(detail, ('images', ..., 'url_list', 0)) or [])
+            if url_or_none(u)]
 
         # 既没视频也没图才算失败。
         # 之前这里先抛错再取 images，图文作品（没有 play_addr）
@@ -212,7 +229,7 @@ class DouyinWebViewIE(InfoExtractor):
             'duration': duration,
             'formats': formats,
             'thumbnails': [
-                {'url': u} for u in (traverse_obj(
+                {'url': _https(u)} for u in (traverse_obj(
                     detail, ('video', 'cover', 'url_list', ...)) or [])
                 if url_or_none(u)
             ],

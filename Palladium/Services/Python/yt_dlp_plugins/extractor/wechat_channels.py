@@ -46,6 +46,19 @@ _UA = ('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) '
        'AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148')
 
 
+def _https(url):
+    """把 http 换成 https。
+
+    Info.plist 没有 ATS 例外，App 内所有请求强制 HTTPS。
+    视频号的 CDN 偶尔下发 http://，直接用会被系统拦掉。
+    """
+    if not url or not isinstance(url, str):
+        return url
+    if url.startswith('http://'):
+        return 'https://' + url[len('http://'):]
+    return url
+
+
 _PAGE_SCRIPT_TEMPLATE = r'''
 const __shortId = __SHORT_ID__;
 const __shareUrl = __SHARE_URL__;
@@ -201,7 +214,7 @@ class WeChatChannelsIE(InfoExtractor):
                 video_url = url_or_none(node.get('videoUrl'))
             if video_url:
                 formats.append({
-                    'url': video_url,
+                    'url': _https(video_url),
                     'format_id': fid,
                     'ext': 'mp4',
                     'http_headers': {
@@ -215,13 +228,13 @@ class WeChatChannelsIE(InfoExtractor):
         for item in traverse_obj(feed, ('picInfo', ...)) or []:
             u = url_or_none(traverse_obj(item, ('url', {str})))
             if u:
-                images.append(u)
+                images.append(_https(u))
 
         title = (desc or author or short_id).strip()[:200]
 
         # 封面 / 原声
-        cover = url_or_none(traverse_obj(feed, ('coverUrl', {str})))
-        bgm = url_or_none(traverse_obj(feed, ('bgmInfo', 'bgmUrl', {str})))
+        cover = _https(url_or_none(traverse_obj(feed, ('coverUrl', {str}))))
+        bgm = _https(url_or_none(traverse_obj(feed, ('bgmInfo', 'bgmUrl', {str}))))
 
         if images and not formats:
             # 图集：做成 playlist，和抖音/小红书图文一致
