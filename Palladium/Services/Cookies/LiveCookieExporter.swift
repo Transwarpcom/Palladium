@@ -110,19 +110,42 @@ enum LiveCookieExporter {
     }
 
     /// 判断某个 cookie 文件名对应哪些站点。
-    /// 文件名是 `<host>-cookies.txt`（由 importBrowserCookies 生成），
-    /// 所以直接从文件名反推主机名，不用额外存映射表。
+    ///
+    /// 文件名来自 `importBrowserCookies`：`<host>-cookies.txt`。
+    /// 但重复导入时 uniqueCookieDestinationURL 会生成
+    /// `<host>-cookies 2.txt`，所以解析顺序必须是：
+    ///   1. 去掉 .txt
+    ///   2. 去掉末尾的 ` N`（重名序号）
+    ///   3. 去掉 -cookies
+    /// 顺序错了就会把 `www.douyin.com-cookies 2` 当成主机名，刷新失效。
     static func hosts(forCookieFileName fileName: String) -> [String] {
         var name = fileName
-        // 去掉扩展名
-        if let dot = name.range(of: ".txt", options: .backwards) {
-            name = String(name[name.startIndex..<dot.lowerBound])
+
+        // 1) 去扩展名
+        if name.lowercased().hasSuffix(".txt") {
+            name = String(name.dropLast(4))
         }
-        // 去掉 -cookies 后缀
+
+        // 2) 去重名序号：结尾是 " 2" ~ " 999"
+        if let spaceRange = name.range(of: " ", options: .backwards) {
+            let suffix = name[spaceRange.upperBound...]
+            if !suffix.isEmpty, suffix.allSatisfy(\.isNumber) {
+                name = String(name[name.startIndex..<spaceRange.lowerBound])
+            }
+        }
+
+        // 3) 去 -cookies 后缀
         if name.hasSuffix("-cookies") {
             name = String(name.dropLast("-cookies".count))
         }
+
+        name = name.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty else { return [] }
+
+        // 只处理从浏览器登录导出的文件（名字里含点，说明是主机名）。
+        // 粘贴导入的文件叫 pasted-cookies.txt，反推出 "pasted" 不是域名，
+        // 拿它去匹配 WebView cookie 只会白跑一趟。
+        guard name.contains(".") else { return [] }
 
         // 特例：元宝的视频号凭据存在 yuanbao 域，但下载走 channels 域，
         // 两个都要带上，否则视频号拿不到 token。
