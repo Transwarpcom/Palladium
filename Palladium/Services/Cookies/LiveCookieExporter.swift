@@ -138,7 +138,7 @@ enum LiveCookieExporter {
         // 浏览器扩展（Get cookies.txt 等）常导出成
         // `www.bilibili.com_cookies.txt`（下划线），别只认连字符。
         for sep in ["-cookies", "_cookies"] {
-            if name.lower().hasSuffix(sep) {
+            if name.lowercased().hasSuffix(sep) {
                 name = String(name.dropLast(sep.count))
                 break
             }
