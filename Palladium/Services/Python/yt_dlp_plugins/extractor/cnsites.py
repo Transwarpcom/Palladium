@@ -36,16 +36,30 @@ class DouyinShortLinkIE(InfoExtractor):
         self.write_debug(f'短链展开结果: {final_url}')
 
         real_id = None
-        for pattern in (r'/share/video/(\d+)', r'/video/(\d+)',
-                        r'/share/slides/(\d+)', r'[?&]mid=(\d+)'):
+        is_slides = False
+        # slides 是图文作品，要交给 NoteWebView 而不是视频提取器，
+        # 否则图文作品会因为没有 play_addr 而走错分支。
+        for pattern, slides in (
+            (r'/share/video/(\d+)', False),
+            (r'/video/(\d+)', False),
+            (r'/share/slides/(\d+)', True),
+            (r'/note/(\d+)', True),
+            (r'[?&]mid=(\d+)', False),
+        ):
             m = re.search(pattern, final_url)
             if m:
                 real_id = m.group(1)
+                is_slides = slides
                 break
 
         if not real_id:
             raise ExtractorError(
-                f'短链展开后没找到视频 ID（跳转到 {final_url}）', expected=True)
+                f'短链展开后没找到作品 ID（跳转到 {final_url}）', expected=True)
+
+        if is_slides:
+            return self.url_result(
+                f'https://www.douyin.com/note/{real_id}',
+                ie='DouyinNoteWebView', video_id=real_id)
 
         return self.url_result(
             f'https://www.douyin.com/video/{real_id}',
