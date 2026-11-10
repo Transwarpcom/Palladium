@@ -15,7 +15,13 @@ import re
 import urllib.parse
 
 from yt_dlp.extractor.common import InfoExtractor
-from yt_dlp.utils import ExtractorError, js_to_json, traverse_obj, url_or_none
+from yt_dlp.utils import (
+    ExtractorError,
+    int_or_none,
+    js_to_json,
+    traverse_obj,
+    url_or_none,
+)
 
 
 # ---------------------------------------------------------------- 抖音
@@ -94,15 +100,18 @@ class DouyinNoteIE(InfoExtractor):
 
 
 def _strip_xhs_resize(url):
-    """去掉小红书 CDN 的缩放/裁剪参数，拿原图。
+    """去掉小红书 CDN 的缩放/裁剪/水印参数，拿原图原视频。
 
-    sns-img.xhscdn.com 的图片地址后面常带处理后缀，形如：
+    sns-img.xhscdn.com / sns-video 的地址后面常带处理后缀，形如：
       ...jpg?imageView2/2/w/1080/format/webp
       ...jpg!nd_dft_wlteh_webp_3
-    这些会让服务端返回压缩版。去掉后拿到原始尺寸。
+    这些会让服务端返回压缩版甚至带水印的版本。
 
-    只做保守处理：删掉 query 里的 imageView2 参数段、删掉 ! 开头的
-    处理后缀。不确定的形态原样返回，宁可拿压缩图也不要 404。
+    只做保守处理：
+      - 删 ! 之后的后缀
+      - 删 query 里的 imageView2 / imageMogr2
+      - 删 watermark / wm 这类参数
+    其余参数（鉴权相关的）一律保留，宁可拿压缩图也不要 404。
     """
     if not url:
         return url
@@ -113,14 +122,22 @@ def _strip_xhs_resize(url):
     if bang > 0:
         out = out[:bang]
 
-    # 去掉 imageView2 这类查询参数
-    if '?' in out:
-        base, _, query = out.partition('?')
-        kept = [p for p in query.split('&')
-                if p and not p.startswith(('imageView2', 'imageMogr2'))]
-        out = base + ('?' + '&'.join(kept) if kept else '')
+    if '?' not in out:
+        return out
 
-    return out
+    base, _, query = out.partition('?')
+    kept = []
+    for part in query.split('&'):
+        if not part:
+            continue
+        key = part.split('=', 1)[0].lower()
+        if key.startswith(('imageview2', 'imagemogr2')):
+            continue
+        if key in ('watermark', 'with_watermark', 'wm', 'water_mark'):
+            continue
+        kept.append(part)
+
+    return base + ('?' + '&'.join(kept) if kept else '')
 
 
 class XiaoHongShuShortIE(InfoExtractor):
@@ -243,9 +260,15 @@ class XiaoHongShuImagesIE(InfoExtractor):
                 '请在 Palladium 设置里导入 cookies（浏览器登录后导出 xiaohongshu.com 的 cookies.txt）',
                 expected=True)
 
-        # 有视频就让原生提取器处理
-        if traverse_obj(note, ('video', 'media', 'stream')):
-            return self.url_result(url, ie='XiaoHongShu', video_id=note_id)
+        # 视频笔记：自己解析，不交给原生提取器。
+        #
+        # 原生 XiaoHongShuIE 只取 stream 里的第一条，不比较码率，
+        # 也保留 URL 上的所有参数（可能含缩放/水印）。自己解析能：
+        #   1. 按码率/分辨率排序，选出最高画质
+        #   2. 清掉 watermark / 缩放参数，拿原视频
+        stream = traverse_obj(note, ('video', 'media', 'stream'))
+        if stream:
+            return self._video_info(note, note_id, url, stream)
 
         # 优先取原图，其次默认图。imageList 里不同笔记字段不同，
         # 按质量从高到低依次尝试。
@@ -284,3 +307,94 @@ class XiaoHongShuImagesIE(InfoExtractor):
                 'http_headers': {'Referer': 'https://www.xiaohongshu.com/'},
             } for i, u in enumerate(images)],
         }
+
+    def _video_info(self, note, note_id, url, stream):
+        """从 note.video.media.stream 里挑最高画质，清掉水印参数。
+
+        小红书 stream 通常有两类 key：
+          h264 / h265 / av1 —— 各含 masterUrl（清单）和 backupUrls
+        每项还带 width/height/avgBitrate。挑码率最高的那个。
+
+        没有水印变体可选——小红书笔记视频本身不带平台水印，
+        但 URL 上的参数可能触发压缩，所以统一过一遍 _strip_xhs_resize。
+        """
+        candidates = []
+
+        def collect(node, tag):
+            # 节点可能是字符串、字典，也可能是列表（每个编码下有多档）
+            if isinstance(node, str):
+                u = url_or_none(node)
+                if u:
+                    candidates.append((tag, u, 0, 0))
+                return
+            if isinstance(node, list):
+                for i, item in enumerate(node):
+                    collect(item, f'{tag}{i}' if len(node) > 1 else tag)
+                return
+            if not isinstance(node, dict):
+                return
+            master = url_or_none(node.get('masterUrl'))
+            if master:
+                candidates.append((
+                    tag,
+                    master,
+                    int_or_none(node.get('avgBitrate')) or 0,
+                    int_or_none(node.get('height')) or 0,
+                ))
+            for i, u in enumerate(node.get('backupUrls') or []):
+                uu = url_or_none(u)
+                if uu:
+                    candidates.append((f'{tag}_bak{i}', uu, 0, 0))
+
+        if isinstance(stream, dict):
+            for codec, node in stream.items():
+                if isinstance(node, dict) and any(
+                        k in node for k in ('masterUrl', 'backupUrls')):
+                    collect(node, str(codec))
+                elif isinstance(node, (dict, list)):
+                    collect(node, str(codec))
+        elif isinstance(stream, list):
+            for i, node in enumerate(stream):
+                collect(node, f'stream{i}')
+
+        if not candidates:
+            raise ExtractorError(
+                '小红书视频流里没有可用地址（可能需要登录或有权限限制）',
+                expected=True)
+
+        # 码率高的优先；码率缺失时保持原顺序
+        candidates.sort(key=lambda x: (x[2], x[3]), reverse=True)
+
+        formats = []
+        seen = set()
+        for tag, u, bitrate, height in candidates:
+            clean = _strip_xhs_resize(u)
+            if clean in seen:
+                continue
+            seen.add(clean)
+            formats.append({
+                'url': clean,
+                'format_id': tag,
+                'ext': 'mp4',
+                'height': height or None,
+                'tbr': bitrate // 1000 if bitrate else None,
+                'http_headers': {'Referer': 'https://www.xiaohongshu.com/'},
+            })
+
+        desc = traverse_obj(note, ('desc', {str})) or ''
+        title = traverse_obj(note, ('title', {str})) or desc[:60] or note_id
+        uploader = traverse_obj(note, ('user', 'nickname', {str})) or ''
+        cover = _strip_xhs_resize(
+            url_or_none(traverse_obj(note, ('imageList', 0, 'urlDefault'))))
+
+        info = {
+            'id': note_id,
+            'title': title.strip()[:200],
+            'description': desc,
+            'uploader': uploader,
+            'formats': formats,
+            'http_headers': {'Referer': 'https://www.xiaohongshu.com/'},
+        }
+        if cover:
+            info['thumbnails'] = [{'url': cover}]
+        return info

@@ -32,7 +32,12 @@ import re
 import urllib.parse
 
 from yt_dlp.extractor.common import InfoExtractor
-from yt_dlp.utils import ExtractorError, traverse_obj, url_or_none
+from yt_dlp.utils import (
+    ExtractorError,
+    int_or_none,
+    traverse_obj,
+    url_or_none,
+)
 
 
 # 短链形态：https://weixin.qq.com/sph/<短ID>
@@ -57,6 +62,46 @@ def _https(url):
     if url.startswith('http://'):
         return 'https://' + url[len('http://'):]
     return url
+
+
+_WATERMARK_PARAMS = (
+    'watermark', 'with_watermark', 'wm', 'water_mark',
+    'logo_name', 'is_watermark',
+)
+
+
+def _strip_watermark(url):
+    """清掉会让服务端加水印/压缩的参数，并统一 https。
+
+    视频号的 mp4 直链通常已经是无水印的，但部分下发地址会带
+    watermark / wm 之类参数触发压制；顺手也清掉图片的缩放参数。
+    """
+    if not url or not isinstance(url, str):
+        return url
+
+    out = _https(url)
+
+    # 图片 CDN 的 ! 处理后缀
+    bang = out.find('!')
+    if bang > 0:
+        out = out[:bang]
+
+    if '?' not in out:
+        return out
+
+    base, _, query = out.partition('?')
+    kept = []
+    for part in query.split('&'):
+        if not part:
+            continue
+        key = part.split('=', 1)[0].lower()
+        if key in _WATERMARK_PARAMS:
+            continue
+        if key.startswith(('imageview2', 'imagemogr2')):
+            continue
+        kept.append(part)
+
+    return base + ('?' + '&'.join(kept) if kept else '')
 
 
 _PAGE_SCRIPT_TEMPLATE = r'''
@@ -201,40 +246,57 @@ class WeChatChannelsIE(InfoExtractor):
         )
         desc = traverse_obj(feed, ('description', {str})) or ''
 
-        # 视频：h264 优先（兼容性最好），其次主地址，最后 h265
+        # 视频格式：优先无水印源，同编码内按码率/分辨率排序。
+        #
+        # 字段优先级：h264VideoInfo > videoUrl > h265VideoInfo
+        # h264 放前面是因为它兼容性最好（HEVC 在部分老旧播放器上打不开）。
+        # 每个节点的 url_list 可能有多条，取第一条可用即可。
         formats = []
-        for key, fid in (('h264VideoInfo', 'h264'),
-                         ('videoUrl', 'default'),
-                         ('h265VideoInfo', 'h265')):
+        for key, fid, note in (
+            ('h264VideoInfo', 'h264', 'H.264'),
+            ('videoUrl', 'default', '默认'),
+            ('h265VideoInfo', 'h265', 'H.265（体积小）'),
+        ):
             node = feed.get(key)
-            video_url = None
+            urls = []
             if isinstance(node, str):
-                video_url = url_or_none(node)
+                urls = [url_or_none(node)]
             elif isinstance(node, dict):
-                video_url = url_or_none(node.get('videoUrl'))
-            if video_url:
-                formats.append({
-                    'url': _https(video_url),
-                    'format_id': fid,
-                    'ext': 'mp4',
-                    'http_headers': {
-                        'User-Agent': _UA,
-                        'Referer': 'https://channels.weixin.qq.com/',
-                    },
-                })
+                # 节点可能是 {videoUrl: "..."} 或 {videoUrl: {url_list: [...]}}
+                v = node.get('videoUrl')
+                if isinstance(v, str):
+                    urls = [url_or_none(v)]
+                elif isinstance(v, dict):
+                    urls = traverse_obj(v, ('url_list', ...)) or []
+                if not urls:
+                    urls = traverse_obj(node, ('url_list', ...)) or []
+            urls = [_strip_watermark(u) for u in urls if url_or_none(u)]
+            if not urls:
+                continue
+            formats.append({
+                'url': urls[0],
+                'format_id': fid,
+                'format_note': note,
+                'ext': 'mp4',
+                'height': int_or_none(node.get('height')) if isinstance(node, dict) else None,
+                'http_headers': {
+                    'User-Agent': _UA,
+                    'Referer': 'https://channels.weixin.qq.com/',
+                },
+            })
 
         # 图集作品：没有视频，只有 picInfo
         images = []
         for item in traverse_obj(feed, ('picInfo', ...)) or []:
             u = url_or_none(traverse_obj(item, ('url', {str})))
             if u:
-                images.append(_https(u))
+                images.append(_strip_watermark(u))
 
         title = (desc or author or short_id).strip()[:200]
 
         # 封面 / 原声
-        cover = _https(url_or_none(traverse_obj(feed, ('coverUrl', {str}))))
-        bgm = _https(url_or_none(traverse_obj(feed, ('bgmInfo', 'bgmUrl', {str}))))
+        cover = _strip_watermark(url_or_none(traverse_obj(feed, ('coverUrl', {str}))))
+        bgm = _strip_watermark(url_or_none(traverse_obj(feed, ('bgmInfo', 'bgmUrl', {str}))))
 
         if images and not formats:
             # 图集：做成 playlist，和抖音/小红书图文一致

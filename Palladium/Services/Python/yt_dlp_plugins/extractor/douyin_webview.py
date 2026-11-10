@@ -88,6 +88,51 @@ def _https(url):
     return url
 
 
+# 会让服务端返回带水印版本的查询参数。
+# 抖音的 play_addr 本身是无水印流，但某些下发的地址会显式带
+# watermark=1 / with_watermark=1；小红书的图片会带 wm 参数。
+# 把这些参数删掉再请求，就能拿到干净的原图/原视频。
+_WATERMARK_PARAMS = (
+    'watermark', 'with_watermark', 'wm', 'water_mark',
+    'logo_name', 'is_watermark',
+)
+
+
+def _strip_watermark(url):
+    """去掉 URL 里会让服务端加 watermark/logo 的参数，并统一 https。
+
+    另外顺手清掉小红书的缩放参数（imageView2 / imageMogr2 和 ! 后缀），
+    这样拿到的是原图而不是压缩缩略图。
+    """
+    if not url or not isinstance(url, str):
+        return url
+
+    out = _https(url)
+
+    # 小红书 CDN 的 ! 处理后缀（如 !nd_dft_wlteh_webp_3）
+    bang = out.find('!')
+    if bang > 0:
+        out = out[:bang]
+
+    if '?' not in out:
+        return out
+
+    base, _, query = out.partition('?')
+    kept = []
+    for part in query.split('&'):
+        if not part:
+            continue
+        key = part.split('=', 1)[0].lower()
+        if key in _WATERMARK_PARAMS:
+            continue
+        # 小红书的图片缩放/裁剪参数
+        if key.startswith(('imageview2', 'imagemogr2')):
+            continue
+        kept.append(part)
+
+    return base + ('?' + '&'.join(kept) if kept else '')
+
+
 # 页面内执行的 JS：加载 SDK → 签名 → fetch → 返回 JSON
 _PAGE_SCRIPT_TEMPLATE = r'''
 const __sdkUrls = __SDK_URLS__;
@@ -173,11 +218,20 @@ class DouyinWebViewIE(InfoExtractor):
         if duration:
             duration = duration // 1000  # 抖音给的是毫秒
 
-        # 优先用 bit_rate 里的多档清晰度，回退到 play_addr
+        # 视频格式：全部走无水印源。
+        #
+        # 字段选择原则（2026-11 实测）：
+        #   play_addr       无水印主地址，最干净
+        #   play_addr_h264  无水印 H.264，兼容性最好
+        #   play_addr_265   无水印 H.265，体积小但部分播放器不支持
+        #   download_addr   ⚠ 带水印，坚决不用
+        #
+        # bit_rate 里每档也是无水印的 play_addr，多档优先。
         formats = []
         for br in traverse_obj(detail, ('video', 'bit_rate', ...)) or []:
             play_urls = traverse_obj(br, ('play_addr', 'url_list', ...)) or []
-            play_urls = [u for u in play_urls if url_or_none(u)]
+            play_urls = [_strip_watermark(u) for u in play_urls
+                         if url_or_none(u)]
             if not play_urls:
                 continue
             gear = traverse_obj(br, ('gear_name', {str})) or 'unknown'
@@ -187,7 +241,7 @@ class DouyinWebViewIE(InfoExtractor):
             if m:
                 height = int(m.group(1))
             formats.append({
-                'url': _https(play_urls[0]),
+                'url': play_urls[0],
                 'format_id': gear,
                 'ext': 'mp4',
                 'height': height,
@@ -199,18 +253,32 @@ class DouyinWebViewIE(InfoExtractor):
                 },
             })
 
+        # 补齐编码变体：同一清晰度下给出 h264/h265 两个源，
+        # 让 yt-dlp 能按兼容性/体积自行挑。
         if not formats:
-            play_urls = traverse_obj(detail, ('video', 'play_addr', 'url_list', ...)) or []
-            for i, u in enumerate(u for u in play_urls if url_or_none(u)):
+            for key, fid, note in (
+                ('play_addr_h264', 'h264', 'H.264 无水印'),
+                ('play_addr', 'default', '无水印主地址'),
+                ('play_addr_265', 'h265', 'H.265 无水印'),
+            ):
+                node = traverse_obj(detail, ('video', key))
+                urls = []
+                if isinstance(node, dict):
+                    urls = traverse_obj(node, ('url_list', ...)) or []
+                urls = [_strip_watermark(u) for u in urls if url_or_none(u)]
+                if not urls:
+                    continue
                 formats.append({
-                    'url': _https(u),
-                    'format_id': f'play_{i}',
+                    'url': urls[0],
+                    'format_id': fid,
+                    'format_note': note,
                     'ext': 'mp4',
                     'http_headers': {'Referer': 'https://www.douyin.com/'},
                 })
 
-        # 图文作品：images 字段有图（抖音的图文没有 play_addr）
-        images = [_https(u) for u in (
+        # 图文作品：images 字段有图（抖音的图文没有 play_addr）。
+        # 每张图都清掉水印参数，取原图。
+        images = [_strip_watermark(u) for u in (
             traverse_obj(detail, ('images', ..., 'url_list', 0)) or [])
             if url_or_none(u)]
 
