@@ -64,7 +64,10 @@ class DouyinNoteIE(InfoExtractor):
     IE_NAME = 'douyin:note'
     IE_DESC = '抖音图文作品'
     _VALID_URL = r'https?://(?:www\.)?douyin\.com/note/(?P<id>\d+)'
-    _TESTS = []
+    _TESTS = [{
+        'url': 'https://www.douyin.com/note/7123456789012345678',
+        'only_matching': True,
+    }]
 
     def _real_extract(self, url):
         note_id = self._match_id(url)
@@ -112,7 +115,13 @@ class XiaoHongShuShortIE(InfoExtractor):
     IE_NAME = 'xiaohongshu:short'
     IE_DESC = '小红书短链'
     _VALID_URL = r'https?://(?:xhslink\.com|xhslink\.cn)/(?P<id>[\w\-]+)'
-    _TESTS = []
+    _TESTS = [{
+        'url': 'https://xhslink.com/a/abcdefg',
+        'only_matching': True,
+    }, {
+        'url': 'https://xhslink.com/o/abcdefg',
+        'only_matching': True,
+    }]
 
     def _real_extract(self, url):
         short_id = self._match_id(url)
@@ -160,7 +169,14 @@ class XiaoHongShuImagesIE(InfoExtractor):
     IE_NAME = 'xiaohongshu:images'
     IE_DESC = '小红书图文笔记'
     _VALID_URL = r'https?://(?:www\.)?xiaohongshu\.com/(?:explore|discovery/item)/(?P<id>[\da-f]+)'
-    _TESTS = []
+    _TESTS = [{
+        'url': 'https://www.xiaohongshu.com/explore/6ad78427000000000c00f895',
+        'only_matching': True,
+    }, {
+        'url': 'https://www.xiaohongshu.com/discovery/item/6ad78427000000000c00f895'
+               '?xsec_token=ABC&xsec_source=pc_feed',
+        'only_matching': True,
+    }]
 
     def _real_extract(self, url):
         note_id = self._match_id(url)
