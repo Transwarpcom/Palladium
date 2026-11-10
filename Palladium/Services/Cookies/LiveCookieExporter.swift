@@ -134,18 +134,27 @@ enum LiveCookieExporter {
             }
         }
 
-        // 3) 去 -cookies 后缀
-        if name.hasSuffix("-cookies") {
-            name = String(name.dropLast("-cookies".count))
+        // 3) 去 -cookies / _cookies 后缀
+        // 浏览器扩展（Get cookies.txt 等）常导出成
+        // `www.bilibili.com_cookies.txt`（下划线），别只认连字符。
+        for sep in ("-cookies", "_cookies"):
+            if name.lower().hasSuffix(sep) {
+                name = String(name.dropLast(sep.count))
+                break
+            }
         }
 
         name = name.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty else { return [] }
 
-        // 只处理从浏览器登录导出的文件（名字里含点，说明是主机名）。
-        // 粘贴导入的文件叫 pasted-cookies.txt，反推出 "pasted" 不是域名，
-        // 拿它去匹配 WebView cookie 只会白跑一趟。
-        guard name.contains(".") else { return [] }
+        // 只处理看起来像域名的（含点且没有下划线/空格）。
+        // 粘贴导入的叫 pasted-cookies.txt，反推出 "pasted" 不是域名；
+        // 处理错的名字去匹配 WebView cookie 只会白跑一趟。
+        guard name.contains("."),
+              !name.contains("_"),
+              !name.contains(" ") else {
+            return []
+        }
 
         // 特例：元宝的视频号凭据存在 yuanbao 域，但下载走 channels 域，
         // 两个都要带上，否则视频号拿不到 token。
