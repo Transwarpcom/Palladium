@@ -194,12 +194,15 @@ class DouyinWebViewIE(InfoExtractor):
                     'http_headers': {'Referer': 'https://www.douyin.com/'},
                 })
 
-        if not formats:
+        # 图文作品：images 字段有图（抖音的图文没有 play_addr）
+        images = traverse_obj(detail, ('images', ..., 'url_list', 0)) or []
+
+        # 既没视频也没图才算失败。
+        # 之前这里先抛错再取 images，图文作品（没有 play_addr）
+        # 必然走到抛错分支，永远出不来图。
+        if not formats and not images:
             raise ExtractorError('没解析到播放地址（作品可能需要登录才能看）', expected=True)
 
-
-        # 图文作品：images 字段有图
-        images = traverse_obj(detail, ('images', ..., 'url_list', 0)) or []
 
         return {
             'id': video_id,
